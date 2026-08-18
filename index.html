@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Torre de Control · Despachos &amp; Recepciones</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B1220; --surface:#131C2E; --surface-alt:#1B2740;
+    --ink:#EDF1F7; --muted:#8593A8; --line:#2A3650;
+    --despacho:#E8A33D; --recepcion:#34B3A0; --alert:#E2574C;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(circle at 15% 0%, rgba(232,163,61,0.07), transparent 40%),
+      radial-gradient(circle at 85% 10%, rgba(52,179,160,0.07), transparent 40%),
+      var(--bg);
+    color:var(--ink); font-family:'Inter', sans-serif; min-height:100vh;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 18px 80px;}
+
+  .hero{
+    position:relative; background:var(--surface); border:1px solid var(--line);
+    border-radius:14px; padding:28px 26px; overflow:hidden;
+  }
+  .hero::before{
+    content:""; position:absolute; top:0;bottom:0;left:0; width:6px;
+    background:repeating-linear-gradient(180deg, var(--despacho) 0 14px, var(--recepcion) 14px 28px);
+    opacity:.7;
+  }
+  .eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; margin:0 0 8px 18px;}
+  h1{ font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:clamp(22px,4vw,32px); line-height:1.15; margin:0 0 6px 18px;}
+  .hero p.sub{ margin:0 0 4px 18px; color:var(--muted); font-size:14px; max-width:580px;}
+
+  .upload-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:22px 18px 0;
+  }
+  @media (max-width:640px){ .upload-grid{grid-template-columns:1fr;} }
+
+  .upload-card{
+    background:var(--surface-alt); border:1.5px dashed var(--line); border-radius:10px;
+    padding:18px; cursor:pointer; transition:border-color .2s, background .2s; text-align:center;
+  }
+  .upload-card:hover, .upload-card.drag{ border-color:var(--stamp); background:rgba(255,255,255,0.02); }
+  .upload-card.desp{ --stamp:var(--despacho); }
+  .upload-card.rec{ --stamp:var(--recepcion); }
+  .upload-card .tag{
+    display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.08em;
+    padding:3px 9px; border-radius:20px; border:1px solid var(--stamp); color:var(--stamp); margin-bottom:10px;
+  }
+  .upload-card strong{ display:block; font-family:'Space Grotesk',sans-serif; font-size:15px; margin-bottom:4px;}
+  .upload-card span.hint{ display:block; color:var(--muted); font-size:12px;}
+  .upload-card .status{
+    margin-top:10px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--muted);
+    border-top:1px solid var(--line); padding-top:8px;
+  }
+  .upload-card .status b{ color:var(--stamp); }
+  input[type=file]{display:none;}
+
+  .actions-row{ display:flex; flex-wrap:wrap; gap:10px; margin:18px 18px 0; }
+  .btn{
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13.5px;
+    background:var(--despacho); color:#1a1305; border:none; padding:10px 18px;
+    border-radius:8px; cursor:pointer; transition:filter .15s, transform .15s;
+  }
+  .btn:hover{ filter:brightness(1.08); transform:translateY(-1px); }
+  .btn.excel{ background:var(--recepcion); color:#06231d; }
+  .btn.ghost{ background:transparent; border:1px solid var(--line); color:var(--muted); }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; transform:none; }
+
+  .section{
+    margin-top:26px; background:var(--surface); border:1px solid var(--line);
+    border-radius:14px; padding:22px 24px;
+  }
+  .section h2{ font-family:'Space Grotesk',sans-serif; font-size:16.5px; margin:0 0 16px; display:flex; align-items:center; gap:10px;}
+  .section h2::after{ content:""; flex:1; height:1px; background:var(--line); }
+
+  .empty{
+    text-align:center; color:var(--muted); font-size:13.5px; padding:30px 10px;
+    font-family:'IBM Plex Mono',monospace;
+  }
+
+  .kpi-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; }
+  .kpi{
+    position:relative; background:var(--surface-alt); border:1px solid var(--line);
+    border-top:3px dashed var(--stamp,var(--despacho)); border-radius:10px; padding:16px 14px 14px;
+  }
+  .kpi .num{ font-family:'Space Grotesk',sans-serif; font-size:26px; font-weight:700;}
+  .kpi .label{ font-size:12px; color:var(--muted); margin-top:4px;}
+  .kpi.desp{--stamp:var(--despacho);} .kpi.rec{--stamp:var(--recepcion);} .kpi.diff{--stamp:var(--alert);}
+
+  .charts-grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:20px; }
+  @media (max-width:720px){ .charts-grid{grid-template-columns:1fr;} }
+  .chart-card{ background:var(--surface-alt); border:1px solid var(--line); border-radius:10px; padding:14px;}
+  .chart-card h3{ font-family:'Space Grotesk',sans-serif; font-size:13.5px; margin:0 0 10px; }
+  canvas{max-height:260px;}
+
+  .preview{ margin-top:14px; overflow-x:auto; border:1px solid var(--line); border-radius:8px; max-height:340px; overflow-y:auto;}
+  table{ border-collapse:collapse; width:100%; font-size:12px; font-family:'IBM Plex Mono',monospace;}
+  th,td{ padding:7px 10px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap;}
+  th{ color:var(--muted); font-weight:500; background:var(--surface-alt); position:sticky; top:0;}
+  td.pos{color:var(--recepcion);} td.neg{color:var(--alert);}
+
+  .warn-box{
+    margin-top:14px; background:rgba(226,87,76,0.08); border:1px solid rgba(226,87,76,0.35);
+    border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--ink); line-height:1.5;
+  }
+  .warn-box b{ color:var(--alert); }
+
+  .setup-box{
+    margin:22px 18px 0; background:rgba(232,163,61,0.08); border:1px solid rgba(232,163,61,0.35);
+    border-radius:10px; padding:16px 18px; font-size:13px; line-height:1.6; color:var(--ink);
+  }
+  .setup-box code{ background:var(--surface-alt); padding:2px 6px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:12px;}
+
+  footer{ text-align:center; color:var(--muted); font-size:11.5px; margin-top:34px; font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <h1>Informe de despacho y recepción</h1>
+    <p class="sub" id="lastUpdated">Sin datos cargados todavía</p>
+
+    <div class="upload-grid" id="uploadGrid">
+      <div class="upload-card desp" id="cardDesp">
+        <span class="tag">DESPACHO</span>
+        <strong>Subir informe de despacho</strong>
+        <span class="hint">.csv del sistema de guías (cancha / bosque)</span>
+        <input type="file" id="fileDesp" accept=".csv,.xlsx,.xls">
+        <div class="status" id="statusDesp">Sin datos cargados todavía</div>
+      </div>
+      <div class="upload-card rec" id="cardRec">
+        <span class="tag">RECEPCIÓN</span>
+        <strong>Subir informe de recepción</strong>
+        <span class="hint">.xlsx del sistema de planta destino</span>
+        <input type="file" id="fileRec" accept=".csv,.xlsx,.xls">
+        <div class="status" id="statusRec">Sin datos cargados todavía</div>
+      </div>
+    </div>
+
+    <p style="margin:14px 18px 0; font-size:12px; color:var(--muted);">Si un número de guía ya existe, se actualiza con el dato más reciente — nunca se duplica.</p>
+
+    <div class="actions-row">
+      <button class="btn excel" id="btnExcel" disabled>Descargar reporte Excel</button>
+      <button class="btn ghost" id="btnClear">Borrar todos los datos guardados</button>
+    </div>
+  </div>
+
+  <div class="section" id="resultsSection">
+    <h2>Resumen general</h2>
+    <div id="resultsBody">
+      <div class="empty">Todavía no hay datos suficientes. Sube al menos el archivo de despacho para ver el resumen.</div>
+    </div>
+  </div>
+
+</div>
+<footer>Los archivos se procesan en tu navegador y se guardan en tu base de datos de Supabase.</footer>
+
+<script>
+const SUPABASE_URL = 'https://hgbpbovpaxlmhwbxjqui.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_VVb3u3zm4Y_0xQmffhMJ8g__lFm-CSf';
+let supabase = null;
+try{
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}catch(e){
+  console.error('No se pudo inicializar Supabase:', e);
+}
+
+let despachoRows = [];   // [{guia, despachador, mr, unidad, fechaEmision, origen, destino, fechaRecepInterna, cantRecepInterna}]
+let recepcionRows = [];  // [{guia, mr, m3ssc, fechaIngreso, origen, destino, transportista}]
+let despachoUpdatedAt = null;
+let recepcionUpdatedAt = null;
+let charts = {};
+
+function norm(s){
+  return String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+}
+function toNum(v){
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return v;
+  let s = String(v).trim();
+  if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
+  else s = s.replace(/,/g,'');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+function findCol(headers, candidates){
+  const normed = headers.map(norm);
+  for (const cand of candidates){
+    const i = normed.findIndex(h => h === cand);
+    if (i >= 0) return i;
+  }
+  for (const cand of candidates){
+    const i = normed.findIndex(h => h.includes(cand));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+function detectHeaderRow(rows2D, guiaCandidates){
+  for (let r = 0; r < Math.min(5, rows2D.length); r++){
+    const normed = rows2D[r].map(norm);
+    if (guiaCandidates.some(c => normed.includes(c))) return r;
+  }
+  return 0;
+}
+
+async function readFileAsRows2D(file){
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'csv'){
+    const text = await file.text();
+    const firstLine = text.split('\n')[0];
+    const semi = (firstLine.match(/;/g)||[]).length;
+    const comma = (firstLine.match(/,/g)||[]).length;
+    const delim = semi > comma ? ';' : ',';
+    const parsed = Papa.parse(text, {delimiter: delim, skipEmptyLines: true});
+    return parsed.data;
+  } else {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+  }
+}
+
+async function handleDespachoFile(file){
+  setStatus('statusDesp', 'Leyendo archivo…');
+  const rows2D = await readFileAsRows2D(file);
+  const guiaCands = ['NUMEROGUIA','NGUIA','GUIA'];
+  const hIdx = detectHeaderRow(rows2D, guiaCands);
+  const headers = rows2D[hIdx];
+  const data = rows2D.slice(hIdx+1).filter(r => r.some(c => c !== ''));
+
+  const cGuia = findCol(headers, guiaCands);
+  const cDesp = findCol(headers, ['NOMBREDESPACHADOR','DESPACHADOR']);
+  const cMr = findCol(headers, ['CANTIDADCARGADA']);
+  const cUnidad = findCol(headers, ['UNIDADDESPACHO']);
+  const cFechaEm = findCol(headers, ['FECHAEMISION']);
+  const cOrigen = findCol(headers, ['NOMBREORIGEN']);
+  const cDestino = findCol(headers, ['NOMBREDESTINO']);
+  const cFechaRec = findCol(headers, ['FECHARECEPCION']);
+  const cCantRec = findCol(headers, ['CANTIDADRECEPCION']);
+
+  if (cGuia < 0){
+    setStatus('statusDesp', 'No reconocí la columna de N° de guía en este archivo. Revisa el formato.', true);
+    return;
+  }
+
+  const parsed = data.map(r => ({
+    guia: String(r[cGuia]).trim(),
+    despachador: cDesp>=0 ? String(r[cDesp]).trim() : '(sin dato)',
+    mr: cMr>=0 ? toNum(r[cMr]) : 0,
+    unidad: cUnidad>=0 ? String(r[cUnidad]).trim() : '',
+    fechaEmision: cFechaEm>=0 ? String(r[cFechaEm]).trim() : '',
+    origen: cOrigen>=0 ? String(r[cOrigen]).trim() : '',
+    destino: cDestino>=0 ? String(r[cDestino]).trim() : '',
+    fechaRecepInterna: cFechaRec>=0 ? String(r[cFechaRec]).trim() : '',
+    cantRecepInterna: cCantRec>=0 ? toNum(r[cCantRec]) : 0
+  })).filter(r => r.guia);
+
+  const merged = mergeByGuia(despachoRows, parsed);
+  despachoRows = merged;
+  await upsertRows('despacho_guias', parsed.map(toDespachoDbRow));
+  despachoUpdatedAt = await getLatestUpdatedAt('despacho_guias');
+  setStatus('statusDesp', `<b>${despachoRows.length}</b> guías guardadas`);
+  refreshLastUpdatedLabel();
+  render();
+}
+
+async function handleRecepcionFile(file){
+  setStatus('statusRec', 'Leyendo archivo…');
+  const rows2D = await readFileAsRows2D(file);
+  const guiaCands = ['NGD','NUMEROGD','GUIA'];
+  const hIdx = detectHeaderRow(rows2D, guiaCands);
+  const headers = rows2D[hIdx];
+  const data = rows2D.slice(hIdx+1).filter(r => r.some(c => c !== ''));
+
+  const cGuia = findCol(headers, guiaCands);
+  const cMr = findCol(headers, ['MRRECEP','MR']);
+  const cM3 = findCol(headers, ['M3SSCRECEP','M3SSC']);
+  const cFechaIng = findCol(headers, ['FECHAING']);
+  const cOrigen = findCol(headers, ['DESCORIGEN','ORIGEN']);
+  const cDestino = findCol(headers, ['NOMBREDESTINO','DESTINO']);
+  const cTransp = findCol(headers, ['NOMBRETRANSP','TRANSPORTISTA']);
+
+  if (cGuia < 0){
+    setStatus('statusRec', 'No reconocí la columna de N° de guía en este archivo. Revisa el formato.', true);
+    return;
+  }
+
+  const parsed = data.map(r => ({
+    guia: String(r[cGuia]).trim(),
+    mr: cMr>=0 ? toNum(r[cMr]) : 0,
+    m3ssc: cM3>=0 ? toNum(r[cM3]) : 0,
+    fechaIngreso: cFechaIng>=0 ? String(r[cFechaIng]).trim() : '',
+    origen: cOrigen>=0 ? String(r[cOrigen]).trim() : '',
+    destino: cDestino>=0 ? String(r[cDestino]).trim() : '',
+    transportista: cTransp>=0 ? String(r[cTransp]).trim() : ''
+  })).filter(r => r.guia && r.guia !== 'undefined');
+
+  const merged = mergeByGuia(recepcionRows, parsed);
+  recepcionRows = merged;
+  await upsertRows('recepcion_guias', parsed.map(toRecepcionDbRow));
+  recepcionUpdatedAt = await getLatestUpdatedAt('recepcion_guias');
+  setStatus('statusRec', `<b>${recepcionRows.length}</b> guías guardadas`);
+  refreshLastUpdatedLabel();
+  render();
+}
+
+function mergeByGuia(existing, incoming){
+  const map = new Map(existing.map(r => [r.guia, r]));
+  incoming.forEach(r => map.set(r.guia, r));
+  return Array.from(map.values());
+}
+
+function toDespachoDbRow(r){
+  return {
+    guia: r.guia, despachador: r.despachador, mr: r.mr, unidad: r.unidad,
+    fecha_emision: r.fechaEmision, origen: r.origen, destino: r.destino,
+    fecha_recep_interna: r.fechaRecepInterna, cant_recep_interna: r.cantRecepInterna,
+    updated_at: new Date().toISOString()
+  };
+}
+function fromDespachoDbRow(row){
+  return {
+    guia: row.guia, despachador: row.despachador, mr: Number(row.mr)||0, unidad: row.unidad,
+    fechaEmision: row.fecha_emision, origen: row.origen, destino: row.destino,
+    fechaRecepInterna: row.fecha_recep_interna, cantRecepInterna: Number(row.cant_recep_interna)||0
+  };
+}
+function toRecepcionDbRow(r){
+  return {
+    guia: r.guia, mr: r.mr, m3ssc: r.m3ssc, fecha_ingreso: r.fechaIngreso,
+    origen: r.origen, destino: r.destino, transportista: r.transportista,
+    updated_at: new Date().toISOString()
+  };
+}
+function fromRecepcionDbRow(row){
+  return {
+    guia: row.guia, mr: Number(row.mr)||0, m3ssc: Number(row.m3ssc)||0, fechaIngreso: row.fecha_ingreso,
+    origen: row.origen, destino: row.destino, transportista: row.transportista
+  };
+}
+
+async function fetchAll(table){
+  if (!supabase) return [];
+  let all = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true){
+    const { data, error } = await supabase.from(table).select('*').range(from, from + pageSize - 1);
+    if (error){ console.error('Error leyendo', table, error); break; }
+    all = all.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
+async function upsertRows(table, rows){
+  if (!supabase){
+    alert('No se pudo conectar con la base de datos. Revisa tu conexión a internet y vuelve a intentar.');
+    return false;
+  }
+  if (!rows.length) return true;
+  const { error } = await supabase.from(table).upsert(rows, {onConflict:'guia'});
+  if (error){
+    console.error('Error guardando en', table, error);
+    alert('Hubo un problema guardando los datos: ' + error.message);
+    return false;
+  }
+  return true;
+}
+
+async function getLatestUpdatedAt(table){
+  if (!supabase) return null;
+  const { data, error } = await supabase.from(table).select('updated_at').order('updated_at', {ascending:false}).limit(1);
+  if (error || !data || !data.length) return null;
+  return data[0].updated_at;
+}
+
+function formatUpdatedAt(iso){
+  if (!iso) return null;
+  const d = new Date(iso);
+  return d.toLocaleString('es-CL', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+function refreshLastUpdatedLabel(){
+  const el = document.getElementById('lastUpdated');
+  const dates = [despachoUpdatedAt, recepcionUpdatedAt].filter(Boolean).map(d => new Date(d));
+  if (dates.length === 0){
+    el.textContent = 'Sin datos cargados todavía';
+    return;
+  }
+  const latest = new Date(Math.max(...dates));
+  el.textContent = `Última actualización: ${formatUpdatedAt(latest.toISOString())}`;
+}
+
+function setStatus(elId, html, isError){
+  const el = document.getElementById(elId);
+  el.innerHTML = html;
+  el.style.color = isError ? 'var(--alert)' : 'var(--muted)';
+}
+
+function destroyCharts(){ Object.values(charts).forEach(c => c && c.destroy()); charts = {}; }
+
+function render(){
+  const body = document.getElementById('resultsBody');
+  const btnExcel = document.getElementById('btnExcel');
+
+  if (despachoRows.length === 0){
+    body.innerHTML = '<div class="empty">Todavía no hay datos suficientes. Sube al menos el archivo de despacho para ver el resumen.</div>';
+    btnExcel.disabled = true;
+    return;
+  }
+  btnExcel.disabled = false;
+
+  const recMap = new Map(recepcionRows.map(r => [r.guia, r]));
+  const despMap = new Map(despachoRows.map(r => [r.guia, r]));
+
+  const matched = despachoRows.filter(r => recMap.has(r.guia));
+  const soloDespacho = despachoRows.filter(r => !recMap.has(r.guia));
+  const soloRecepcion = recepcionRows.filter(r => !despMap.has(r.guia));
+
+  const mrDespTotal = despachoRows.reduce((a,r)=>a+r.mr,0);
+  const mrRecTotalMatched = matched.reduce((a,r)=>a + (recMap.get(r.guia).mr || 0), 0);
+  const diff = mrRecTotalMatched - mrDespTotal; // positivo = a favor mío (recepcionaron más), negativo = pérdida
+  const diffPct = mrDespTotal ? (diff/mrDespTotal*100) : 0;
+
+  let html = '';
+  html += `<div class="kpi-grid">
+    <div class="kpi desp"><div class="num">${despachoRows.length}</div><div class="label">Guías despachadas</div></div>
+    <div class="kpi rec"><div class="num">${matched.length}</div><div class="label">Guías recepcionadas (cruce)</div></div>
+    <div class="kpi diff"><div class="num">${soloDespacho.length}</div><div class="label">Pendientes de recepción</div></div>
+    <div class="kpi desp"><div class="num">${fmt(mrDespTotal)}</div><div class="label">MR despachados</div></div>
+    <div class="kpi rec"><div class="num">${fmt(mrRecTotalMatched)}</div><div class="label">MR recepcionados</div></div>
+    <div class="kpi ${diff>=0?'rec':'diff'}"><div class="num">${diff>0?'+':''}${fmt(diff)}</div><div class="label">${diff>=0?'A favor mío':'Pérdida'} (${diffPct.toFixed(2)}%)</div></div>
+  </div>`;
+
+  if (soloRecepcion.length > 0){
+    html += `<div class="warn-box"><b>${soloRecepcion.length} guías</b> aparecen recepcionadas en planta pero no tienen un registro de despacho cargado (puede ser otro tipo de producto, ej. astillas, u otro origen no incluido en el archivo de despacho).</div>`;
+  }
+
+
+  html += `<div class="charts-grid">
+    <div class="chart-card"><h3>MR despachado vs. recepcionado por despachador</h3><canvas id="chartDesp"></canvas></div>
+    <div class="chart-card"><h3>Guías por destino</h3><canvas id="chartDestino"></canvas></div>
+  </div>`;
+
+  html += `<div class="preview" style="margin-top:22px;"><table id="tableDesp"></table></div>`;
+
+  html += `<h2 style="margin-top:28px;">Comparación diaria</h2>`;
+  html += `<p style="font-size:12px; color:var(--muted); margin:-6px 0 14px;">Cada guía se cuenta en el día que se despachó. "Recepcionadas" indica cuántas de esas guías ya fueron recibidas en planta, sin importar qué día llegaron.</p>`;
+  html += `<div class="chart-card" style="margin-bottom:16px;"><h3>Guías despachadas vs. ya recepcionadas (por día de despacho)</h3><canvas id="chartDiario"></canvas></div>`;
+  html += `<div class="preview"><table id="tableDiario"></table></div>`;
+
+  body.innerHTML = html;
+
+  destroyCharts();
+
+  const porDesp = {};
+  despachoRows.forEach(r => {
+    const key = r.despachador || '(sin dato)';
+    porDesp[key] = porDesp[key] || {guias:0, mrD:0, mrR:0};
+    porDesp[key].guias += 1;
+    porDesp[key].mrD += r.mr;
+    const rec = recMap.get(r.guia);
+    if (rec) porDesp[key].mrR += rec.mr;
+  });
+  const labels = Object.keys(porDesp).sort((a,b)=> (porDesp[b].mrD-porDesp[b].mrR) - (porDesp[a].mrD-porDesp[a].mrR));
+
+  charts.desp = new Chart(document.getElementById('chartDesp'), {
+    type:'bar',
+    data:{ labels, datasets:[
+      {label:'Despachado', data: labels.map(l=>porDesp[l].mrD.toFixed(2)), backgroundColor:'#E8A33D', borderRadius:4},
+      {label:'Recepcionado', data: labels.map(l=>porDesp[l].mrR.toFixed(2)), backgroundColor:'#34B3A0', borderRadius:4}
+    ]},
+    options: chartOptions(true)
+  });
+
+  const destCounts = {};
+  despachoRows.forEach(r => { const d = r.destino || '(sin dato)'; destCounts[d]=(destCounts[d]||0)+1; });
+  const destEntries = Object.entries(destCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  charts.destino = new Chart(document.getElementById('chartDestino'), {
+    type:'bar',
+    data:{ labels: destEntries.map(e=>e[0]), datasets:[{data:destEntries.map(e=>e[1]), backgroundColor:'#34B3A0', borderRadius:4}]},
+    options: chartOptions(false)
+  });
+
+  const table = document.getElementById('tableDesp');
+  table.innerHTML = '<thead><tr><th>Despachador</th><th>Guías</th><th>MR despachado</th><th>MR recepcionado</th><th>Diferencia</th></tr></thead><tbody>' +
+    labels.map(l => {
+      const d = porDesp[l];
+      const dif = d.mrR - d.mrD; // positivo = a favor mío
+      return `<tr><td>${l}</td><td>${d.guias}</td><td>${fmt(d.mrD)}</td><td>${fmt(d.mrR)}</td><td class="${dif>=0?'pos':'neg'}">${dif>0?'+':''}${fmt(dif)}</td></tr>`;
+    }).join('') + '</tbody>';
+
+  const dayMap = buildDayMap();
+  const dayLabels = Object.keys(dayMap).sort();
+
+  charts.diario = new Chart(document.getElementById('chartDiario'), {
+    type:'bar',
+    data:{ labels: dayLabels, datasets:[
+      {label:'Despachadas', data: dayLabels.map(d=>dayMap[d].guiasDesp), backgroundColor:'#E8A33D', borderRadius:4},
+      {label:'Ya recepcionadas', data: dayLabels.map(d=>dayMap[d].guiasRec), backgroundColor:'#34B3A0', borderRadius:4}
+    ]},
+    options: chartOptions(true)
+  });
+
+  const tableDiario = document.getElementById('tableDiario');
+  tableDiario.innerHTML = '<thead><tr><th>Fecha despacho</th><th>Guías desp.</th><th>MR desp.</th><th>Guías ya recep.</th><th>MR recep.</th><th>Diferencia MR</th></tr></thead><tbody>' +
+    dayLabels.map(d => {
+      const v = dayMap[d];
+      const dif = v.mrRec - v.mrDesp; // positivo = a favor mío
+      return `<tr><td>${d}</td><td>${v.guiasDesp}</td><td>${fmt(v.mrDesp)}</td><td>${v.guiasRec}</td><td>${fmt(v.mrRec)}</td><td class="${dif>=0?'pos':'neg'}">${dif>0?'+':''}${fmt(dif)}</td></tr>`;
+    }).join('') + '</tbody>';
+}
+
+function parseDateLoose(s){
+  if (!s) return null;
+  const m = String(s).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (!m) return null;
+  const [, d, mo, y] = m;
+  return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+}
+
+function buildDayMap(){
+  const recMap = new Map(recepcionRows.map(r => [r.guia, r]));
+  const map = {};
+  despachoRows.forEach(r => {
+    const day = parseDateLoose(r.fechaEmision);
+    if (!day) return;
+    map[day] = map[day] || {guiasDesp:0, mrDesp:0, guiasRec:0, mrRec:0};
+    map[day].guiasDesp += 1;
+    map[day].mrDesp += r.mr;
+    const rec = recMap.get(r.guia);
+    if (rec){
+      map[day].guiasRec += 1;
+      map[day].mrRec += rec.mr;
+    }
+  });
+  return map;
+}
+
+function fmt(n){ return Number(n).toLocaleString('es-CL', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+function chartOptions(legend){
+  return {
+    responsive:true,
+    plugins:{ legend:{ display: legend, labels:{color:'#8593A8', font:{family:'Inter'}} } },
+    scales:{
+      x:{ ticks:{color:'#8593A8', font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#2A3650'} },
+      y:{ ticks:{color:'#8593A8'}, grid:{color:'#2A3650'}, beginAtZero:true }
+    }
+  };
+}
+
+function downloadExcel(){
+  const recMap = new Map(recepcionRows.map(r => [r.guia, r]));
+  const despMap = new Map(despachoRows.map(r => [r.guia, r]));
+  const matched = despachoRows.filter(r => recMap.has(r.guia));
+  const soloDespacho = despachoRows.filter(r => !recMap.has(r.guia));
+  const soloRecepcion = recepcionRows.filter(r => !despMap.has(r.guia));
+
+  const mrDespTotal = despachoRows.reduce((a,r)=>a+r.mr,0);
+  const mrRecTotalMatched = matched.reduce((a,r)=>a + (recMap.get(r.guia).mr || 0), 0);
+  const diffTotal = mrRecTotalMatched - mrDespTotal; // positivo = a favor mío
+
+  const resumen = [
+    {Indicador:'Guías despachadas', Valor: despachoRows.length},
+    {Indicador:'Guías recepcionadas (cruce)', Valor: matched.length},
+    {Indicador:'Guías pendientes de recepción', Valor: soloDespacho.length},
+    {Indicador:'Guías recepcionadas sin despacho registrado', Valor: soloRecepcion.length},
+    {Indicador:'MR despachados', Valor: Number(mrDespTotal.toFixed(2))},
+    {Indicador:'MR recepcionados', Valor: Number(mrRecTotalMatched.toFixed(2))},
+    {Indicador:'Diferencia MR (positivo = a favor mío)', Valor: Number(diffTotal.toFixed(2))}
+  ];
+
+  const porDesp = {};
+  despachoRows.forEach(r => {
+    const key = r.despachador || '(sin dato)';
+    porDesp[key] = porDesp[key] || {guias:0, mrD:0, mrR:0};
+    porDesp[key].guias += 1;
+    porDesp[key].mrD += r.mr;
+    const rec = recMap.get(r.guia);
+    if (rec) porDesp[key].mrR += rec.mr;
+  });
+  const porDespArr = Object.entries(porDesp).map(([nombre,d]) => ({
+    Despachador: nombre, Guias: d.guias,
+    MR_Despachado: Number(d.mrD.toFixed(2)),
+    MR_Recepcionado: Number(d.mrR.toFixed(2)),
+    Diferencia: Number((d.mrR-d.mrD).toFixed(2))
+  }));
+
+  const cruzadas = matched.map(r => {
+    const rec = recMap.get(r.guia);
+    return {
+      Guia: r.guia, Despachador: r.despachador, Fecha_Emision: r.fechaEmision,
+      Origen: r.origen, Destino: r.destino,
+      MR_Despachado: r.mr, MR_Recepcionado: rec.mr,
+      Diferencia: Number((rec.mr - r.mr).toFixed(2)),
+      Fecha_Ingreso_Planta: rec.fechaIngreso, Transportista: rec.transportista
+    };
+  });
+
+  const pendientes = soloDespacho.map(r => ({
+    Guia: r.guia, Despachador: r.despachador, Fecha_Emision: r.fechaEmision,
+    Origen: r.origen, Destino: r.destino, MR_Despachado: r.mr
+  }));
+
+  const sinDespacho = soloRecepcion.map(r => ({
+    Guia: r.guia, Fecha_Ingreso: r.fechaIngreso, Origen: r.origen, Destino: r.destino,
+    MR_Recepcionado: r.mr, M3ssc_Recepcionado: r.m3ssc, Transportista: r.transportista
+  }));
+
+  const dayMap = buildDayMap();
+  const dayLabels = Object.keys(dayMap).sort();
+  const diarioArr = dayLabels.map(d => ({
+    Fecha_Despacho: d,
+    Guias_Despachadas: dayMap[d].guiasDesp,
+    MR_Despachado: Number(dayMap[d].mrDesp.toFixed(2)),
+    Guias_Ya_Recepcionadas: dayMap[d].guiasRec,
+    MR_Recepcionado: Number(dayMap[d].mrRec.toFixed(2)),
+    Diferencia_MR: Number((dayMap[d].mrRec - dayMap[d].mrDesp).toFixed(2))
+  }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), 'Resumen');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(diarioArr), 'Diario');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porDespArr), 'Por despachador');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cruzadas), 'Guias cruzadas');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pendientes), 'Pendientes recepcion');
+  if (sinDespacho.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sinDespacho), 'Recepcion sin despacho');
+
+  const dateStr = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `reporte_despachos_recepciones_${dateStr}.xlsx`);
+}
+
+document.getElementById('cardDesp').addEventListener('click', () => document.getElementById('fileDesp').click());
+document.getElementById('cardRec').addEventListener('click', () => document.getElementById('fileRec').click());
+document.getElementById('fileDesp').addEventListener('change', e => { if (e.target.files.length) handleDespachoFile(e.target.files[0]); });
+document.getElementById('fileRec').addEventListener('change', e => { if (e.target.files.length) handleRecepcionFile(e.target.files[0]); });
+document.getElementById('btnExcel').addEventListener('click', downloadExcel);
+document.getElementById('btnClear').addEventListener('click', async () => {
+  if (!supabase){ alert('No se pudo conectar con la base de datos.'); return; }
+  if (!confirm('¿Borrar todos los datos guardados de despacho y recepción? Esta acción no se puede deshacer.')) return;
+  try{
+    await supabase.from('despacho_guias').delete().neq('guia', '__none__');
+    await supabase.from('recepcion_guias').delete().neq('guia', '__none__');
+  }catch(e){}
+  despachoRows = []; recepcionRows = [];
+  despachoUpdatedAt = null; recepcionUpdatedAt = null;
+  setStatus('statusDesp', 'Sin datos cargados todavía');
+  setStatus('statusRec', 'Sin datos cargados todavía');
+  refreshLastUpdatedLabel();
+  render();
+});
+
+(async function init(){
+  const [despRaw, recRaw] = await Promise.all([fetchAll('despacho_guias'), fetchAll('recepcion_guias')]);
+  despachoRows = despRaw.map(fromDespachoDbRow);
+  recepcionRows = recRaw.map(fromRecepcionDbRow);
+  despachoUpdatedAt = await getLatestUpdatedAt('despacho_guias');
+  recepcionUpdatedAt = await getLatestUpdatedAt('recepcion_guias');
+  if (despachoRows.length) setStatus('statusDesp', `<b>${despachoRows.length}</b> guías guardadas`);
+  if (recepcionRows.length) setStatus('statusRec', `<b>${recepcionRows.length}</b> guías guardadas`);
+  refreshLastUpdatedLabel();
+  render();
+})();
+</script>
+</body>
+</html>
